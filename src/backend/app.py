@@ -153,6 +153,84 @@ def detect_base_city():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/preview', methods=['POST'])
+def preview_pdfs():
+    """
+    预览PDF识别结果，不进行费用计算
+    返回识别出的票据信息供用户确认
+    """
+    from backend.pdf_parser import parse_all_pdfs
+    from backend.trip_matcher import detect_base_city, detect_destination_cities, get_city_base
+
+    data = request.get_json(force=True)
+    root_folder = data.get('rootFolder')
+    session_id = data.get('sessionId')
+
+    # 如果提供了session_id，使用上传的文件夹
+    if session_id and session_id in upload_sessions:
+        root_folder = upload_sessions[session_id]['folder_path']
+
+    if not root_folder:
+        return jsonify({'error': 'Root folder path or sessionId is required'}), 400
+
+    try:
+        # 解析所有PDF（不跳过已处理的）
+        tickets, invoices = parse_all_pdfs(root_folder, skip_processed=False)
+
+        # 格式化票据信息
+        tickets_preview = []
+        for t in tickets:
+            tickets_preview.append({
+                'file_path': t.file_path,
+                'file_name': os.path.basename(t.file_path),
+                'invoice_number': t.invoice_number,
+                'departure_station': t.departure_station,
+                'arrival_station': t.arrival_station,
+                'train_number': t.train_number,
+                'date': t.date.strftime('%Y-%m-%d') if t.date else '',
+                'time': t.time,
+                'seat': t.seat,
+                'price': t.price,
+                'passenger_name': t.passenger_name,
+                'ticket_type': t.ticket_type,
+                'departure_city': get_city_base(t.departure_station),
+                'arrival_city': get_city_base(t.arrival_station)
+            })
+
+        # 格式化发票信息
+        invoices_preview = []
+        for inv in invoices:
+            invoices_preview.append({
+                'file_path': inv.file_path,
+                'file_name': os.path.basename(inv.file_path),
+                'invoice_number': inv.invoice_number,
+                'issue_date': inv.issue_date.strftime('%Y-%m-%d') if inv.issue_date else '',
+                'hotel_name': inv.hotel_name,
+                'days': inv.days,
+                'amount': inv.amount,
+                'tax': inv.tax,
+                'total': inv.total
+            })
+
+        # 自动检测Base城市
+        detected_base = detect_base_city(tickets) if tickets else '北京'
+        destinations = detect_destination_cities(tickets, detected_base) if tickets else []
+
+        return jsonify({
+            'success': True,
+            'tickets': tickets_preview,
+            'invoices': invoices_preview,
+            'ticket_count': len(tickets),
+            'invoice_count': len(invoices),
+            'detected_base': detected_base,
+            'destinations': destinations
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/process', methods=['POST', 'OPTIONS'])
 def process_expenses():
     """Process PDF files and generate expense summary."""

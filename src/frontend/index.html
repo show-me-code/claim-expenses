@@ -611,11 +611,11 @@
 
             <!-- Process Buttons -->
             <div class="btn-group">
-                <button class="btn" id="processBtn" style="flex: 1;">
-                    <span>开始处理（跳过已处理）</span>
+                <button class="btn" id="previewBtn" style="flex: 1;">
+                    <span>🔍 预览识别结果</span>
                 </button>
-                <button class="btn btn-secondary" id="reprocessBtn" style="flex: 1;">
-                    <span>重新计算所有</span>
+                <button class="btn btn-secondary" id="processBtn" style="flex: 1;">
+                    <span>开始处理</span>
                 </button>
             </div>
 
@@ -629,6 +629,37 @@
 
             <!-- Status Message -->
             <div id="statusMessage"></div>
+        </div>
+
+        <!-- Preview Section -->
+        <div class="card fade-in" id="previewSection" style="display: none;">
+            <h2 class="card-title">识别结果预览</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 16px;">请确认以下识别结果是否正确，如有错误可手动调整后处理</p>
+
+            <!-- Preview Tickets -->
+            <div id="previewTickets" style="margin-bottom: 24px;">
+                <h3 style="font-size: 18px; margin-bottom: 12px;">车票识别结果</h3>
+                <div id="ticketsPreviewList"></div>
+            </div>
+
+            <!-- Preview Invoices -->
+            <div id="previewInvoices" style="margin-bottom: 24px;">
+                <h3 style="font-size: 18px; margin-bottom: 12px;">发票识别结果</h3>
+                <div id="invoicesPreviewList"></div>
+            </div>
+
+            <!-- Detected Info -->
+            <div id="previewDetectedInfo" style="margin-bottom: 16px;"></div>
+
+            <!-- Confirm Buttons -->
+            <div class="btn-group">
+                <button class="btn" id="confirmProcessBtn">
+                    <span>✓ 确认并处理</span>
+                </button>
+                <button class="btn btn-secondary" id="cancelPreviewBtn">
+                    <span>取消</span>
+                </button>
+            </div>
         </div>
 
         <!-- Results Section -->
@@ -685,13 +716,21 @@
         let selectedBaseCity = '';
         let uploadedFiles = [];  // 上传的文件列表
         let uploadSessionId = ''; // 上传会话ID
+        let previewData = null;  // 预览数据缓存
 
         // DOM Elements
         const folderInput = document.getElementById('folderPath');
         const folderSelectBtn = document.getElementById('folderSelectBtn');
         const folderFileInput = document.getElementById('folderInput');
         const fileCountInfo = document.getElementById('fileCountInfo');
+        const previewBtn = document.getElementById('previewBtn');
         const processBtn = document.getElementById('processBtn');
+        const previewSection = document.getElementById('previewSection');
+        const ticketsPreviewList = document.getElementById('ticketsPreviewList');
+        const invoicesPreviewList = document.getElementById('invoicesPreviewList');
+        const previewDetectedInfo = document.getElementById('previewDetectedInfo');
+        const confirmProcessBtn = document.getElementById('confirmProcessBtn');
+        const cancelPreviewBtn = document.getElementById('cancelPreviewBtn');
         const reprocessBtn = document.getElementById('reprocessBtn');
         const clearBtn = document.getElementById('clearBtn');
         const progressContainer = document.getElementById('progressContainer');
@@ -751,6 +790,130 @@
                 console.error('Failed to load processed records:', error);
             }
         }
+
+        // Preview Button - Show recognition results before processing
+        previewBtn.addEventListener('click', async () => {
+            const folderPath = folderInput.value.trim();
+
+            if (!folderPath && !uploadSessionId) {
+                showStatus('请先选择发票文件夹', 'error');
+                return;
+            }
+
+            previewBtn.disabled = true;
+            previewBtn.innerHTML = '<div class="spinner"></div><span>识别中...</span>';
+
+            try {
+                const requestBody = uploadSessionId ? { sessionId: uploadSessionId } : { rootFolder: folderPath };
+
+                const response = await fetch(`${API_BASE}/preview`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showStatus(`识别失败: ${data.error}`, 'error');
+                } else {
+                    previewData = data;
+                    displayPreview(data);
+                }
+            } catch (error) {
+                showStatus(`识别失败: ${error.message}`, 'error');
+            }
+
+            previewBtn.disabled = false;
+            previewBtn.innerHTML = '<span>🔍 预览识别结果</span>';
+        });
+
+        // Display preview results
+        function displayPreview(data) {
+            previewSection.style.display = 'block';
+
+            // Display tickets
+            ticketsPreviewList.innerHTML = '';
+            if (data.tickets.length === 0) {
+                ticketsPreviewList.innerHTML = '<p style="color: var(--text-secondary);">未识别到车票</p>';
+            } else {
+                data.tickets.forEach((t, i) => {
+                    const item = document.createElement('div');
+                    item.className = 'trip-card';
+                    item.style.marginBottom = '8px';
+                    item.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-weight: 500;">${t.train_number || '未知车次'}</span>
+                            <span style="color: var(--text-secondary); font-size: 14px;">${t.date}</span>
+                        </div>
+                        <div style="margin-top: 8px;">
+                            <span>${t.departure_station || '未知'}</span> → <span>${t.arrival_station || '未知'}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 14px; color: var(--text-secondary);">
+                            <span>¥${t.price.toFixed(2)}</span>
+                            <span style="color: ${t.ticket_type === 'refund' ? 'var(--warning)' : 'var(--success)'};">
+                                ${t.ticket_type === 'refund' ? '退票费' : '车票'}
+                            </span>
+                        </div>
+                    `;
+                    ticketsPreviewList.appendChild(item);
+                });
+            }
+
+            // Display invoices
+            invoicesPreviewList.innerHTML = '';
+            if (data.invoices.length === 0) {
+                invoicesPreviewList.innerHTML = '<p style="color: var(--text-secondary);">未识别到发票</p>';
+            } else {
+                data.invoices.forEach((inv, i) => {
+                    const item = document.createElement('div');
+                    item.className = 'trip-card';
+                    item.style.marginBottom = '8px';
+                    item.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-weight: 500;">${inv.hotel_name || '未知酒店'}</span>
+                            <span style="color: var(--text-secondary); font-size: 14px;">${inv.issue_date}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 14px;">
+                            <span>住宿 ${inv.days || 1} 天</span>
+                            <span style="font-weight: 500;">¥${inv.total.toFixed(2)}</span>
+                        </div>
+                    `;
+                    invoicesPreviewList.appendChild(item);
+                });
+            }
+
+            // Display detected info
+            previewDetectedInfo.innerHTML = `
+                <div style="background: var(--bg-secondary); padding: 12px; border-radius: 8px;">
+                    <span>识别到: </span>
+                    <strong style="color: var(--accent);">${data.tickets.length}</strong> 张车票,
+                    <strong style="color: var(--accent);">${data.invoices.length}</strong> 张发票<br>
+                    <span style="margin-top: 8px;">检测到Base城市: </span>
+                    <strong style="color: var(--success);">${data.detected_base}</strong>
+                    ${data.destinations.length > 0 ? `<br>出差目的地: ${data.destinations.join(', ')}` : ''}
+                </div>
+            `;
+
+            // Update base city dropdown with detected value
+            if (data.detected_base) {
+                baseCitySelect.value = data.detected_base;
+                selectedBaseCity = data.detected_base;
+            }
+
+            showStatus('识别完成，请确认结果后点击处理', 'success');
+        }
+
+        // Confirm and process
+        confirmProcessBtn.addEventListener('click', async () => {
+            previewSection.style.display = 'none';
+            await doProcess(true);
+        });
+
+        // Cancel preview
+        cancelPreviewBtn.addEventListener('click', () => {
+            previewSection.style.display = 'none';
+        });
 
         // Folder Selection - Click button to open file picker
         folderSelectBtn.addEventListener('click', () => {

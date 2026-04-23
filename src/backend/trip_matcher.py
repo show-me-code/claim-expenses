@@ -3,11 +3,12 @@ Trip Matcher Module - Match outbound and return train tickets to form trips.
 支持多种闭环模式：
 1. Base(用户指定) -> 出差地 -> Base(用户指定) - 标准闭环
 2. 休假地 -> 出差地 -> Base(用户指定) - 休假期间出差
+3. Base -> 目的地1 -> 目的地2 -> ... -> Base - 多段行程
 
 Base城市可由用户指定或系统自动推荐
 """
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, field
 
 from .pdf_parser import TrainTicket
@@ -18,16 +19,18 @@ class Trip:
     """A complete trip with outbound and return tickets."""
     outbound_ticket: TrainTicket
     return_ticket: Optional[TrainTicket] = None
+    intermediate_tickets: List[TrainTicket] = field(default_factory=list)  # 多段行程中间票据
     refund_tickets: List[TrainTicket] = field(default_factory=list)
     start_date: datetime = None
     end_date: datetime = None
     days: int = 0
     departure_city: str = ""
     arrival_city: str = ""
-    destination_city: str = ""  # 出差目的地
+    destination_city: str = ""  # 出差目的地（第一个）
+    destinations: List[str] = field(default_factory=list)  # 所有目的地列表
     ticket_total: float = 0.0
     refund_total: float = 0.0
-    trip_type: str = "standard"  # standard: Base->出差地->Base, vacation: 休假地->出差地->Base
+    trip_type: str = "standard"  # standard, vacation, multi_segment
 
     def __post_init__(self):
         if self.outbound_ticket:
@@ -41,11 +44,20 @@ class Trip:
         if self.start_date and self.end_date:
             self.days = (self.end_date - self.start_date).days + 1
 
+        # 计算票据总额（包括中间票据）
         self.ticket_total = self.outbound_ticket.price if self.outbound_ticket else 0
         if self.return_ticket:
             self.ticket_total += self.return_ticket.price
+        for t in self.intermediate_tickets:
+            self.ticket_total += t.price
 
         self.refund_total = sum(t.price for t in self.refund_tickets)
+
+        # 设置目的地列表
+        self.destinations = [self.arrival_city]
+        for t in self.intermediate_tickets:
+            if t.arrival_station:
+                self.destinations.append(t.arrival_station)
 
 
 # 常见Base城市列表（用于下拉推荐）
@@ -140,12 +152,8 @@ def match_trips(tickets: List[TrainTicket], base_city: str = None) -> List[Trip]
 
     支持的闭环模式：
     1. Base -> 出差地 -> Base（标准闭环）
-       - 去程：出发=Base，终点=出差地
-       - 返程：出发=出差地，终点=Base
-
     2. 休假地 -> 出差地 -> Base（休假期间出差）
-       - 去程：出发=休假地（非Base），终点=出差地
-       - 返程：出发=出差地，终点=Base
+    3. Base -> 目的地1 -> 目的地2 -> ... -> Base（多段行程）
 
     注意：只返回闭环行程（有去程和返程），不闭环的票不计入
     """
@@ -169,70 +177,78 @@ def match_trips(tickets: List[TrainTicket], base_city: str = None) -> List[Trip]
             continue
 
         # 尝试匹配闭环
-        matched_ticket = None
-        trip_type = "standard"
+        matched_trip_data = None
 
-        # 模式1：Base -> 出差地 -> Base
-        # ticket1是去程（Base出发），找返程（终点Base）
+        # 模式1：从Base出发 - 可能是标准闭环或多段行程的起点
         if is_city_in_station(base_city, ticket1.departure_station):
-            destination = ticket1.arrival_station
-            for ticket2 in normal_tickets:
-                if ticket2.file_path in used_tickets or ticket2.file_path == ticket1.file_path:
-                    continue
-                # 返程：从出差地出发，回到Base
-                if is_city_in_station(base_city, ticket2.arrival_station) and \
-                   city_similarity(ticket2.departure_station, destination) and \
-                   ticket2.date >= ticket1.date:
-                    matched_ticket = ticket2
-                    trip_type = "standard"
-                    break
+            matched_trip_data = match_from_base(ticket1, normal_tickets, used_tickets, base_city)
 
-        # 模式2：休假地 -> 出差地 -> Base
-        # ticket1是去程（休假地出发），找返程（终点Base）
+        # 模式2：终点是Base - 可能是休假模式或返程票
         elif is_city_in_station(base_city, ticket1.arrival_station):
-            # ticket1终点是Base，这可能是返程票
-            # 需要找到对应的去程票
-            destination = ticket1.departure_station  # 出差地
-            for ticket2 in normal_tickets:
-                if ticket2.file_path in used_tickets or ticket2.file_path == ticket1.file_path:
-                    continue
-                # 去程：终点是出差地，出发不是Base
-                if city_similarity(ticket2.arrival_station, destination) and \
-                   not is_city_in_station(base_city, ticket2.departure_station) and \
-                   ticket2.date <= ticket1.date:
-                    matched_ticket = ticket2
-                    trip_type = "vacation_return"  # 这是返程票匹配去程
-                    break
+            matched_trip_data = match_returning_to_base(ticket1, normal_tickets, used_tickets, base_city)
 
-        # 如果没有找到闭环匹配，跳过（不闭环不计入）
-        if matched_ticket is None:
+        # 如果没有找到闭环匹配，跳过
+        if matched_trip_data is None:
             continue
 
-        # 找到匹配的退票
+        outbound, intermediate, return_ticket, trip_type = matched_trip_data
+
+        # 找到匹配的退票（改进：基于票据关联匹配）
+        all_dates = [outbound.date]
+        for t in intermediate:
+            all_dates.append(t.date)
+        if return_ticket:
+            all_dates.append(return_ticket.date)
+
+        # 收集行程涉及的站点和车次
+        trip_stations = set()
+        trip_stations.add(get_city_base(outbound.departure_station))
+        trip_stations.add(get_city_base(outbound.arrival_station))
+        for t in intermediate:
+            trip_stations.add(get_city_base(t.departure_station))
+            trip_stations.add(get_city_base(t.arrival_station))
+        if return_ticket:
+            trip_stations.add(get_city_base(return_ticket.departure_station))
+            trip_stations.add(get_city_base(return_ticket.arrival_station))
+
+        trip_trains = set()
+        trip_trains.add(outbound.train_number)
+        for t in intermediate:
+            trip_trains.add(t.train_number)
+        if return_ticket:
+            trip_trains.add(return_ticket.train_number)
+
         matched_refunds = []
-        start_date = min(ticket1.date, matched_ticket.date)
-        end_date = max(ticket1.date, matched_ticket.date)
+        start_date = min(all_dates)
+        end_date = max(all_dates)
 
         for refund in refund_tickets:
             if refund.file_path not in used_tickets:
+                # 优先级1：车次号匹配
+                refund_train = refund.train_number
+                if refund_train and refund_train in trip_trains:
+                    matched_refunds.append(refund)
+                    used_tickets.add(refund.file_path)
+                    continue
+
+                # 优先级2：站点匹配（退票涉及的站点在行程站点中）
+                refund_dep = get_city_base(refund.departure_station)
+                refund_arr = get_city_base(refund.arrival_station)
+                if refund_dep in trip_stations or refund_arr in trip_stations:
+                    matched_refunds.append(refund)
+                    used_tickets.add(refund.file_path)
+                    continue
+
+                # 优先级3：日期范围匹配（作为fallback）
                 if start_date <= refund.date <= end_date:
                     matched_refunds.append(refund)
                     used_tickets.add(refund.file_path)
 
         # 创建行程
-        if trip_type == "standard":
-            # ticket1是去程，matched_ticket是返程
-            outbound = ticket1
-            return_ticket = matched_ticket
-        elif trip_type == "vacation_return":
-            # matched_ticket是去程，ticket1是返程
-            outbound = matched_ticket
-            return_ticket = ticket1
-            trip_type = "vacation"  # 修正类型
-
         trip = Trip(
             outbound_ticket=outbound,
             return_ticket=return_ticket,
+            intermediate_tickets=intermediate,
             refund_tickets=matched_refunds,
             trip_type=trip_type
         )
@@ -243,10 +259,96 @@ def match_trips(tickets: List[TrainTicket], base_city: str = None) -> List[Trip]
         trips.append(trip)
 
         # 标记已使用
-        used_tickets.add(ticket1.file_path)
-        used_tickets.add(matched_ticket.file_path)
+        used_tickets.add(outbound.file_path)
+        for t in intermediate:
+            used_tickets.add(t.file_path)
+        if return_ticket:
+            used_tickets.add(return_ticket.file_path)
 
     return trips
+
+
+def match_from_base(start_ticket: TrainTicket, all_tickets: List[TrainTicket],
+                    used_tickets: set, base_city: str) -> Optional[Tuple]:
+    """
+    从Base出发的票据匹配逻辑
+    支持标准闭环和多段行程
+
+    Returns:
+        (outbound, intermediate_tickets, return_ticket, trip_type) or None
+    """
+    intermediate_tickets = []
+    current_ticket = start_ticket
+    current_city = current_ticket.arrival_station
+
+    # 寻找后续票据链
+    for next_ticket in all_tickets:
+        if next_ticket.file_path in used_tickets:
+            continue
+        if next_ticket.file_path == current_ticket.file_path:
+            continue
+        if next_ticket.date < current_ticket.date:
+            continue
+
+        # 检查是否是下一段行程
+        if city_similarity(next_ticket.departure_station, current_city):
+            # 检查是否回到Base（返程）
+            if is_city_in_station(base_city, next_ticket.arrival_station):
+                # 找到返程，形成闭环
+                return (start_ticket, intermediate_tickets, next_ticket,
+                        "standard" if not intermediate_tickets else "multi_segment")
+            else:
+                # 继续前往下一个目的地
+                intermediate_tickets.append(next_ticket)
+                current_ticket = next_ticket
+                current_city = next_ticket.arrival_station
+
+    return None
+
+
+def match_returning_to_base(return_ticket: TrainTicket, all_tickets: List[TrainTicket],
+                            used_tickets: set, base_city: str) -> Optional[Tuple]:
+    """
+    返回Base的票据匹配逻辑
+    支持休假期间出差模式
+
+    Returns:
+        (outbound, intermediate_tickets, return_ticket, trip_type) or None
+    """
+    # 从返程票反向追溯行程链
+    intermediate_tickets = []
+    current_ticket = return_ticket
+    current_city = return_ticket.departure_station  # 这是出差地
+
+    # 反向寻找票据
+    for prev_ticket in all_tickets:
+        if prev_ticket.file_path in used_tickets:
+            continue
+        if prev_ticket.file_path == current_ticket.file_path:
+            continue
+        if prev_ticket.date > current_ticket.date:
+            continue
+
+        # 检查是否是前一段行程
+        if city_similarity(prev_ticket.arrival_station, current_city):
+            # 检查出发地
+            if is_city_in_station(base_city, prev_ticket.departure_station):
+                # 找到从Base出发的去程，标准闭环
+                return (prev_ticket, intermediate_tickets, return_ticket,
+                        "vacation" if intermediate_tickets else "standard")
+            else:
+                # 继续反向追溯（休假地出发）
+                intermediate_tickets.insert(0, prev_ticket)
+                current_ticket = prev_ticket
+                current_city = prev_ticket.departure_station
+
+    # 如果追溯到非Base出发，形成休假期间出差闭环
+    if intermediate_tickets:
+        outbound = intermediate_tickets[0]
+        rest_intermediate = intermediate_tickets[1:]
+        return (outbound, rest_intermediate, return_ticket, "vacation")
+
+    return None
 
 
 def get_trip_summary(trip: Trip) -> Dict:
@@ -261,22 +363,33 @@ def get_trip_summary(trip: Trip) -> Dict:
     if trip.start_date and trip.end_date:
         trip_dates = f"{trip.start_date.strftime('%Y-%m-%d')} - {trip.end_date.strftime('%Y-%m-%d')}"
 
+    # 格式化目的地列表
+    destinations_str = ' → '.join(trip.destinations) if trip.destinations else trip.arrival_city
+
+    # 获取中间车次
+    intermediate_trains = [t.train_number for t in trip.intermediate_tickets]
+
     return {
         'departure_city': trip.departure_city,
         'arrival_city': trip.arrival_city,
         'destination_city': trip.destination_city,
-        'end_city': end_city,  # 返程终点（闭环终点）
+        'destinations': trip.destinations,  # 所有目的地列表
+        'destinations_str': destinations_str,  # 格式化的目的地字符串
+        'end_city': end_city,
         'start_date': trip.start_date.strftime('%Y-%m-%d') if trip.start_date else '',
         'end_date': trip.end_date.strftime('%Y-%m-%d') if trip.end_date else '',
         'trip_dates': trip_dates,
         'days': trip.days,
         'outbound_train': trip.outbound_ticket.train_number if trip.outbound_ticket else '',
+        'intermediate_trains': intermediate_trains,
         'return_train': trip.return_ticket.train_number if trip.return_ticket else '',
         'ticket_total': trip.ticket_total,
         'refund_total': trip.refund_total,
         'trip_type': trip.trip_type,
+        'segment_count': len(trip.intermediate_tickets) + 2 if trip.return_ticket else len(trip.intermediate_tickets) + 1,
         'files': [
             trip.outbound_ticket.file_path if trip.outbound_ticket else '',
+            *[t.file_path for t in trip.intermediate_tickets],
             trip.return_ticket.file_path if trip.return_ticket else '',
             *[t.file_path for t in trip.refund_tickets]
         ]
