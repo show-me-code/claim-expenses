@@ -227,14 +227,48 @@ def parse_hotel_invoice_pdf(file_path: str) -> Optional[HotelInvoice]:
         hotel_match = re.search(hotel_pattern, text)
         hotel_name = hotel_match.group(1) if hotel_match else ""
 
-        # Extract days - look for "天" in the quantity column
-        days_match = re.search(r'天\s*(\d+)', text)
-        if days_match:
-            days = int(days_match.group(1))
-        else:
-            # Fallback: look for number before "天"
+        # Extract days - 住宿天数识别
+        # 支持多种格式：数量列、天数字、住宿天数等
+        days = 1  # 默认1天
+
+        # 方法1：查找"住宿"相关的天数，如 "住宿5天" "住宿服务*5天"
+        stay_days_match = re.search(r'住宿[^0-9]*(\d+)\s*天', text)
+        if stay_days_match:
+            days = int(stay_days_match.group(1))
+
+        # 方法2：查找数量列格式，如表格中 "5" 在数量/天数列
+        # 常见格式：项目名称 数量 单价 金额
+        # 例如：住宿服务 5 ¥380.00 ¥1900.00
+        if days == 1:
+            # 尝试匹配表格行格式
+            quantity_match = re.search(r'住宿服务[^\d]*(\d+)[^\d]*\d+\.\d{2}', text)
+            if quantity_match:
+                days = int(quantity_match.group(1))
+
+        # 方法3：查找"天"后面或前面的数字
+        if days == 1:
+            # "天" 后面有数字：天5
+            days_match = re.search(r'天\s*(\d+)', text)
+            if days_match:
+                days = int(days_match.group(1))
+
+        # 方法4：数字后面有"天"：5天
+        if days == 1:
             days_match2 = re.search(r'(\d+)\s*天', text)
-            days = int(days_match2.group(1)) if days_match2 else 1
+            if days_match2:
+                days = int(days_match2.group(1))
+
+        # 方法5：查找住宿费金额计算反推天数
+        # 如果有单价信息，可以通过总金额/单价推算
+        if days == 1 and total > 0:
+            # 尝试查找单价
+            unit_price_match = re.search(r'单价[^\d]*(\d+\.\d{2})', text)
+            if unit_price_match:
+                unit_price = float(unit_price_match.group(1))
+                if unit_price > 0:
+                    calculated_days = round(total / unit_price)
+                    if calculated_days >= 1 and calculated_days <= 30:
+                        days = calculated_days
 
         # Extract total amount (价税合计)
         # Format: "壹仟玖佰圆整 ¥1900.00" or "¥1900.00"
