@@ -634,29 +634,30 @@
         <!-- Preview Section -->
         <div class="card fade-in" id="previewSection" style="display: none;">
             <h2 class="card-title">识别结果预览</h2>
-            <p style="color: var(--text-secondary); margin-bottom: 16px;">请确认以下识别结果是否正确，如有错误可手动调整后处理</p>
 
-            <!-- Preview Tickets -->
-            <div id="previewTickets" style="margin-bottom: 24px;">
-                <h3 style="font-size: 18px; margin-bottom: 12px;">车票识别结果</h3>
-                <div id="ticketsPreviewList"></div>
-            </div>
-
-            <!-- Preview Invoices -->
-            <div id="previewInvoices" style="margin-bottom: 24px;">
-                <h3 style="font-size: 18px; margin-bottom: 12px;">发票识别结果</h3>
-                <div id="invoicesPreviewList"></div>
+            <!-- Two-column layout: Tickets | Invoices -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 12px;">
+                <!-- Tickets Column -->
+                <div>
+                    <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 8px;">车票 (<span id="ticketCountPreview">0</span>)</div>
+                    <div id="ticketsPreviewList" style="display: flex; flex-direction: column; gap: 6px;"></div>
+                </div>
+                <!-- Invoices Column -->
+                <div>
+                    <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 8px;">住宿 (<span id="invoiceCountPreview">0</span>)</div>
+                    <div id="invoicesPreviewList" style="display: flex; flex-direction: column; gap: 6px;"></div>
+                </div>
             </div>
 
             <!-- Detected Info -->
-            <div id="previewDetectedInfo" style="margin-bottom: 16px;"></div>
+            <div id="previewDetectedInfo" style="margin-bottom: 12px;"></div>
 
             <!-- Confirm Buttons -->
             <div class="btn-group">
-                <button class="btn" id="confirmProcessBtn">
-                    <span>✓ 确认并处理</span>
+                <button class="btn" id="confirmProcessBtn" style="flex: 1;">
+                    <span>确认并处理</span>
                 </button>
-                <button class="btn btn-secondary" id="cancelPreviewBtn">
+                <button class="btn btn-secondary" id="cancelPreviewBtn" style="flex: 1;">
                     <span>取消</span>
                 </button>
             </div>
@@ -728,6 +729,8 @@
         const previewSection = document.getElementById('previewSection');
         const ticketsPreviewList = document.getElementById('ticketsPreviewList');
         const invoicesPreviewList = document.getElementById('invoicesPreviewList');
+        const ticketCountPreview = document.getElementById('ticketCountPreview');
+        const invoiceCountPreview = document.getElementById('invoiceCountPreview');
         const previewDetectedInfo = document.getElementById('previewDetectedInfo');
         const confirmProcessBtn = document.getElementById('confirmProcessBtn');
         const cancelPreviewBtn = document.getElementById('cancelPreviewBtn');
@@ -828,80 +831,99 @@
             previewBtn.innerHTML = '<span>🔍 预览识别结果</span>';
         });
 
-        // Display preview results
+        // Display preview results - two-column layout
         function displayPreview(data) {
             previewSection.style.display = 'block';
 
-            // Display tickets
+            // Update counts
+            ticketCountPreview.textContent = data.tickets.length;
+            invoiceCountPreview.textContent = data.invoices.length;
+
+            // Render tickets - compact cards
             ticketsPreviewList.innerHTML = '';
             if (data.tickets.length === 0) {
-                ticketsPreviewList.innerHTML = '<p style="color: var(--text-secondary);">未识别到车票</p>';
+                ticketsPreviewList.innerHTML = '<div style="color: var(--text-secondary); font-size: 13px; padding: 8px;">无车票</div>';
             } else {
-                data.tickets.forEach((t, i) => {
-                    const item = document.createElement('div');
-                    item.className = 'trip-card';
-                    item.style.marginBottom = '8px';
-                    item.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-weight: 500;">${t.train_number || '未知车次'}</span>
-                            <span style="color: var(--text-secondary); font-size: 14px;">${t.date}</span>
+                data.tickets.forEach(t => {
+                    const card = document.createElement('div');
+                    card.style.cssText = 'background: var(--bg-secondary); padding: 8px 10px; border-radius: 6px; font-size: 13px;';
+                    const badgeColor = t.ticket_type === 'refund' ? 'var(--warning)' : 'var(--accent)';
+                    card.innerHTML = `
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="font-weight: 500;">${t.train_number || '车票'}</span>
+                            <span style="font-weight: 600;">¥${t.price.toFixed(2)}</span>
                         </div>
-                        <div style="margin-top: 8px;">
-                            <span>${t.departure_station || '未知'}</span> → <span>${t.arrival_station || '未知'}</span>
+                        <div style="display: flex; justify-content: space-between; margin-top: 3px; color: var(--text-secondary); font-size: 12px;">
+                            <span>${t.departure_station || ''}→${t.arrival_station || ''}</span>
+                            <span>${t.date || ''}</span>
                         </div>
-                        <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 14px; color: var(--text-secondary);">
-                            <span>¥${t.price.toFixed(2)}</span>
-                            <span style="color: ${t.ticket_type === 'refund' ? 'var(--warning)' : 'var(--success)'};">
-                                ${t.ticket_type === 'refund' ? '退票费' : '车票'}
-                            </span>
-                        </div>
+                        ${t.ticket_type === 'refund' ? '<span style="color: var(--warning); font-size: 11px;">退票</span>' : ''}
                     `;
-                    ticketsPreviewList.appendChild(item);
+                    ticketsPreviewList.appendChild(card);
                 });
             }
 
-            // Display invoices
+            // Render invoices - compact cards
             invoicesPreviewList.innerHTML = '';
             if (data.invoices.length === 0) {
-                invoicesPreviewList.innerHTML = '<p style="color: var(--text-secondary);">未识别到发票</p>';
+                invoicesPreviewList.innerHTML = '<div style="color: var(--text-secondary); font-size: 13px; padding: 8px;">无住宿</div>';
             } else {
-                data.invoices.forEach((inv, i) => {
-                    const item = document.createElement('div');
-                    item.className = 'trip-card';
-                    item.style.marginBottom = '8px';
-                    item.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-weight: 500;">${inv.hotel_name || '未知酒店'}</span>
-                            <span style="color: var(--text-secondary); font-size: 14px;">${inv.issue_date}</span>
+                data.invoices.forEach(inv => {
+                    const card = document.createElement('div');
+                    card.style.cssText = 'background: var(--bg-secondary); padding: 8px 10px; border-radius: 6px; font-size: 13px;';
+                    card.innerHTML = `
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100px;">${inv.hotel_name || '酒店'}</span>
+                            <span style="font-weight: 600;">¥${inv.total.toFixed(2)}</span>
                         </div>
-                        <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 14px;">
-                            <span>住宿 ${inv.days || 1} 天</span>
-                            <span style="font-weight: 500;">¥${inv.total.toFixed(2)}</span>
+                        <div style="display: flex; justify-content: space-between; margin-top: 3px; color: var(--text-secondary); font-size: 12px;">
+                            <span>住宿费</span>
+                            <span>${inv.issue_date || ''}</span>
                         </div>
                     `;
-                    invoicesPreviewList.appendChild(item);
+                    invoicesPreviewList.appendChild(card);
                 });
             }
 
-            // Display detected info
+            // Display detected info - compact
             previewDetectedInfo.innerHTML = `
-                <div style="background: var(--bg-secondary); padding: 12px; border-radius: 8px;">
-                    <span>识别到: </span>
-                    <strong style="color: var(--accent);">${data.tickets.length}</strong> 张车票,
-                    <strong style="color: var(--accent);">${data.invoices.length}</strong> 张发票<br>
-                    <span style="margin-top: 8px;">检测到Base城市: </span>
-                    <strong style="color: var(--success);">${data.detected_base}</strong>
-                    ${data.destinations.length > 0 ? `<br>出差目的地: ${data.destinations.join(', ')}` : ''}
+                <div style="background: var(--bg-secondary); padding: 8px 12px; border-radius: 6px; font-size: 14px;">
+                    Base城市: <strong style="color: var(--success);">${data.detected_base}</strong>
+                    ${data.destinations.length > 0 ? ` | 目的地: ${data.destinations.join(', ')}` : ''}
                 </div>
             `;
 
-            // Update base city dropdown with detected value
+            // Update base city dropdown
             if (data.detected_base) {
                 baseCitySelect.value = data.detected_base;
                 selectedBaseCity = data.detected_base;
             }
 
-            showStatus('识别完成，请确认结果后点击处理', 'success');
+            showStatus('识别完成，确认后处理', 'success');
+        }
+                    </div>
+                `;
+                previewList.appendChild(card);
+            });
+
+            // Display detected info - compact
+            previewDetectedInfo.innerHTML = `
+                <div style="background: var(--bg-secondary); padding: 8px 12px; border-radius: 8px; font-size: 14px; display: flex; justify-content: space-between; align-items: center;">
+                    <span>
+                        <strong style="color: var(--accent);">${data.tickets.length}</strong> 票,
+                        <strong style="color: var(--accent);">${data.invoices.length}</strong> 发票
+                        <span style="margin-left: 12px;">Base: <strong style="color: var(--success);">${data.detected_base}</strong></span>
+                    </span>
+                </div>
+            `;
+
+            // Update base city dropdown
+            if (data.detected_base) {
+                baseCitySelect.value = data.detected_base;
+                selectedBaseCity = data.detected_base;
+            }
+
+            showStatus('识别完成，确认后处理', 'success');
         }
 
         // Confirm and process
