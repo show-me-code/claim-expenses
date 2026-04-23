@@ -227,23 +227,41 @@ def parse_hotel_invoice_pdf(file_path: str) -> Optional[HotelInvoice]:
         hotel_match = re.search(hotel_pattern, text)
         hotel_name = hotel_match.group(1) if hotel_match else ""
 
-        # Extract days - 住宿天数识别
-        # 支持多种格式：数量列、天数字、住宿天数等
+        # ========== 先提取金额信息 ==========
+        # Extract total amount (价税合计)
+        # Format: "壹仟玖佰圆整 ¥1900.00" or "¥1900.00"
+        total_pattern = r'[￥¥]?\s*(\d+\.\d{2})'
+        # Look for "价税合计" or "合计"
+        total_match = re.search(r'(价税合计|合计).*?[￥¥]?\s*(\d+\.\d{2})', text)
+        if total_match:
+            total = float(total_match.group(2))
+        else:
+            # Fallback: find the last price in the document
+            all_prices = re.findall(total_pattern, text)
+            total = float(all_prices[-1]) if all_prices else 0.0
+
+        # Extract unit price (单价) - 住宿每晚单价
+        unit_price = 0.0
+        # 表格格式：住宿服务 数量 单价 金额
+        # 例如：住宿服务 5 ¥380.00 ¥1900.00
+        # 单价是第二个金额数字
+        unit_price_match = re.search(r'住宿服务[^\d]*(\d+)[^\d]*(\d+\.\d{2})[^\d]*(\d+\.\d{2})', text)
+        if unit_price_match:
+            unit_price = float(unit_price_match.group(2))  # 第二个数字是单价
+
+        # ========== 再提取住宿天数 ==========
         days = 1  # 默认1天
 
-        # 方法1：查找"住宿"相关的天数，如 "住宿5天" "住宿服务*5天"
-        stay_days_match = re.search(r'住宿[^0-9]*(\d+)\s*天', text)
-        if stay_days_match:
-            days = int(stay_days_match.group(1))
+        # 方法1：表格数量列格式（最精确）
+        # 格式：住宿服务 数量 单价 金额
+        if unit_price_match:
+            days = int(unit_price_match.group(1))  # 第一个数字是数量（天数）
 
-        # 方法2：查找数量列格式，如表格中 "5" 在数量/天数列
-        # 常见格式：项目名称 数量 单价 金额
-        # 例如：住宿服务 5 ¥380.00 ¥1900.00
+        # 方法2：查找"住宿"相关的天数，如 "住宿5天" "住宿服务*5天"
         if days == 1:
-            # 尝试匹配表格行格式
-            quantity_match = re.search(r'住宿服务[^\d]*(\d+)[^\d]*\d+\.\d{2}', text)
-            if quantity_match:
-                days = int(quantity_match.group(1))
+            stay_days_match = re.search(r'住宿[^0-9]*(\d+)\s*天', text)
+            if stay_days_match:
+                days = int(stay_days_match.group(1))
 
         # 方法3：查找"天"后面或前面的数字
         if days == 1:
@@ -258,29 +276,11 @@ def parse_hotel_invoice_pdf(file_path: str) -> Optional[HotelInvoice]:
             if days_match2:
                 days = int(days_match2.group(1))
 
-        # 方法5：查找住宿费金额计算反推天数
-        # 如果有单价信息，可以通过总金额/单价推算
-        if days == 1 and total > 0:
-            # 尝试查找单价
-            unit_price_match = re.search(r'单价[^\d]*(\d+\.\d{2})', text)
-            if unit_price_match:
-                unit_price = float(unit_price_match.group(1))
-                if unit_price > 0:
-                    calculated_days = round(total / unit_price)
-                    if calculated_days >= 1 and calculated_days <= 30:
-                        days = calculated_days
-
-        # Extract total amount (价税合计)
-        # Format: "壹仟玖佰圆整 ¥1900.00" or "¥1900.00"
-        total_pattern = r'[￥¥]?\s*(\d+\.\d{2})'
-        # Look for "价税合计" or "合计"
-        total_match = re.search(r'(价税合计|合计).*?[￥¥]?\s*(\d+\.\d{2})', text)
-        if total_match:
-            total = float(total_match.group(2))
-        else:
-            # Fallback: find the last price in the document
-            all_prices = re.findall(total_pattern, text)
-            total = float(all_prices[-1]) if all_prices else 0.0
+        # 方法5：通过单价反推天数（单价已提取）
+        if days == 1 and unit_price > 0 and total > 0:
+            calculated_days = round(total / unit_price)
+            if calculated_days >= 1 and calculated_days <= 30:
+                days = calculated_days
 
         # Extract amount without tax (金额)
         amount_match = re.search(r'金额\s*[￥¥]?\s*(\d+\.\d{2})', text)
