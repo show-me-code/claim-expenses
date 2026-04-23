@@ -496,6 +496,42 @@
             cursor: not-allowed;
         }
 
+        /* Folder Select Button */
+        .folder-select-btn {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 14px 24px;
+            border-radius: 12px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .folder-select-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        /* Hidden file input */
+        .hidden-file-input {
+            display: none;
+        }
+
+        /* File count info */
+        .file-count-info {
+            margin-top: 8px;
+            font-size: 14px;
+            color: var(--success);
+        }
+
+        .detect-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         .detected-info {
             margin-top: 8px;
             font-size: 14px;
@@ -535,8 +571,13 @@
             <div class="input-group">
                 <label class="input-label">发票存放目录</label>
                 <div class="folder-input-wrapper">
-                    <input type="text" class="folder-input" id="folderPath" placeholder="请输入文件夹路径...">
+                    <input type="text" class="folder-input" id="folderPath" placeholder="请输入文件夹路径或点击选择...">
+                    <button class="folder-select-btn" id="folderSelectBtn">
+                        <span>📁 选择文件夹</span>
+                    </button>
+                    <input type="file" id="folderInput" class="hidden-file-input" webkitdirectory directory multiple>
                 </div>
+                <div class="file-count-info" id="fileCountInfo" style="display: none;"></div>
             </div>
 
             <!-- Base City Selection -->
@@ -642,9 +683,14 @@
         let currentFolder = '';
         let excelPath = '';
         let selectedBaseCity = '';
+        let uploadedFiles = [];  // 上传的文件列表
+        let uploadSessionId = ''; // 上传会话ID
 
         // DOM Elements
         const folderInput = document.getElementById('folderPath');
+        const folderSelectBtn = document.getElementById('folderSelectBtn');
+        const folderFileInput = document.getElementById('folderInput');
+        const fileCountInfo = document.getElementById('fileCountInfo');
         const processBtn = document.getElementById('processBtn');
         const reprocessBtn = document.getElementById('reprocessBtn');
         const clearBtn = document.getElementById('clearBtn');
@@ -705,6 +751,72 @@
                 console.error('Failed to load processed records:', error);
             }
         }
+
+        // Folder Selection - Click button to open file picker
+        folderSelectBtn.addEventListener('click', () => {
+            folderFileInput.click();
+        });
+
+        // Handle folder selection
+        folderFileInput.addEventListener('change', async (e) => {
+            const files = e.target.files;
+            if (!files || files.length === 0) {
+                return;
+            }
+
+            // Filter PDF files
+            const pdfFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+            if (pdfFiles.length === 0) {
+                showStatus('选择的文件夹中没有PDF文件', 'warning');
+                return;
+            }
+
+            // Show file count
+            fileCountInfo.style.display = 'block';
+            fileCountInfo.textContent = `已选择 ${pdfFiles.length} 个PDF文件，正在上传...`;
+
+            // Upload files to backend
+            folderSelectBtn.disabled = true;
+            folderSelectBtn.innerHTML = '<div class="spinner"></div><span>上传中...</span>';
+
+            try {
+                const formData = new FormData();
+                pdfFiles.forEach(file => {
+                    formData.append('files', file, file.webkitRelativePath);
+                });
+
+                const response = await fetch(`${API_BASE}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (data.error) {
+                    showStatus(`上传失败: ${data.error}`, 'error');
+                    fileCountInfo.style.display = 'none';
+                } else {
+                    // Store session ID for processing
+                    uploadSessionId = data.session_id;
+                    uploadedFiles = pdfFiles;
+
+                    // Update UI
+                    fileCountInfo.innerHTML = `✓ 已上传 ${pdfFiles.length} 个PDF文件 (${data.folder_name})`;
+                    fileCountInfo.style.color = 'var(--success)';
+
+                    // Set folder path input to show uploaded folder
+                    folderInput.value = `[已上传] ${data.folder_name}`;
+                    folderInput.disabled = true;
+
+                    showStatus('文件上传成功，可以开始处理', 'success');
+                }
+            } catch (error) {
+                showStatus(`上传失败: ${error.message}`, 'error');
+                fileCountInfo.style.display = 'none';
+            }
+
+            folderSelectBtn.disabled = false;
+            folderSelectBtn.innerHTML = '<span>📁 选择文件夹</span>';
+        });
 
         // Load base cities for dropdown
         async function loadBaseCities() {
@@ -825,7 +937,8 @@
             const folderPath = folderInput.value.trim();
             const mealRate = parseFloat(mealRateInput.value) || 100;
 
-            if (!folderPath) {
+            // Check if files were uploaded or folder path was entered
+            if (!folderPath && !uploadSessionId) {
                 showStatus('请先选择发票文件夹', 'error');
                 return;
             }
@@ -839,17 +952,25 @@
             try {
                 updateProgress(20, '正在扫描PDF文件...');
 
+                // Build request body - use sessionId if files were uploaded
+                const requestBody = {
+                    dailyMealRate: mealRate,
+                    skipProcessed: skipProcessed,
+                    baseCity: selectedBaseCity || undefined
+                };
+
+                if (uploadSessionId) {
+                    requestBody.sessionId = uploadSessionId;
+                } else {
+                    requestBody.rootFolder = folderPath;
+                }
+
                 const response = await fetch(`${API_BASE}/process`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        rootFolder: folderPath,
-                        dailyMealRate: mealRate,
-                        skipProcessed: skipProcessed,
-                        baseCity: selectedBaseCity || undefined
-                    })
+                    body: JSON.stringify(requestBody)
                 });
 
                 updateProgress(60, '正在匹配行程...');

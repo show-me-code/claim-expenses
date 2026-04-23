@@ -6,6 +6,9 @@ from flask_cors import CORS
 import os
 import sys
 import json
+import uuid
+import shutil
+from datetime import datetime
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -20,6 +23,9 @@ PROCESSED_RECORD_FILE = os.path.join(os.path.dirname(__file__), '..', '..', 'pro
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
+# Upload sessions storage (in-memory for simplicity)
+upload_sessions = {}  # session_id -> {folder_path, folder_name, created_at}
+
 
 @app.route('/', methods=['GET'])
 def index():
@@ -30,6 +36,66 @@ def index():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'ok', 'message': 'Expense Claim System is running'})
+
+
+@app.route('/api/upload', methods=['POST'])
+def upload_files():
+    """
+    接收上传的PDF文件，保存到临时文件夹
+    返回session_id用于后续处理
+    """
+    try:
+        files = request.files.getlist('files')
+        if not files:
+            return jsonify({'error': 'No files uploaded'}), 400
+
+        # Generate session ID
+        session_id = str(uuid.uuid4())[:8]
+
+        # Get folder name from first file's relative path
+        first_file = files[0]
+        relative_path = first_file.filename  # e.g., "folder_name/subfolder/file.pdf"
+        folder_name = relative_path.split('/')[0] if '/' in relative_path else 'uploaded_files'
+
+        # Create session folder
+        session_folder = os.path.join(UPLOAD_FOLDER, f'session_{session_id}')
+        os.makedirs(session_folder, exist_ok=True)
+
+        # Save all files, preserving folder structure
+        saved_count = 0
+        for file in files:
+            relative_path = file.filename
+            # Extract subfolder and filename
+            parts = relative_path.split('/')
+            if len(parts) > 1:
+                # Create subfolder structure
+                subfolder = os.path.join(session_folder, *parts[:-1])
+                os.makedirs(subfolder, exist_ok=True)
+                file_path = os.path.join(subfolder, parts[-1])
+            else:
+                file_path = os.path.join(session_folder, parts[0])
+
+            file.save(file_path)
+            saved_count += 1
+
+        # Store session info
+        upload_sessions[session_id] = {
+            'folder_path': session_folder,
+            'folder_name': folder_name,
+            'created_at': datetime.now(),
+            'file_count': saved_count
+        }
+
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'folder_name': folder_name,
+            'file_count': saved_count
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/base-cities', methods=['GET'])
@@ -110,12 +176,17 @@ def process_expenses():
         return jsonify({'error': 'No data provided'}), 400
 
     root_folder = data.get('rootFolder')
+    session_id = data.get('sessionId')  # 从上传会话获取文件夹路径
     daily_meal_rate = data.get('dailyMealRate', 100)
     skip_processed = data.get('skipProcessed', True)  # 默认跳过已处理的发票
     base_city = data.get('baseCity')  # 用户指定或自动检测的Base城市
 
+    # 如果提供了session_id，使用上传的文件夹
+    if session_id and session_id in upload_sessions:
+        root_folder = upload_sessions[session_id]['folder_path']
+
     if not root_folder:
-        return jsonify({'error': 'Root folder path is required'}), 400
+        return jsonify({'error': 'Root folder path or sessionId is required'}), 400
 
     try:
         # 获取当前已处理记录（用于返回给前端显示）
