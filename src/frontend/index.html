@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>差旅费用报销系统</title>
+    <style>
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #1a1a1a;
+            --bg-card: rgba(255, 255, 255, 0.05);
+            --text-primary: #f5f5f7;
+            --text-secondary: #86868b;
+            --accent: #0071e3;
+            --accent-hover: #0077ed;
+            --success: #34c759;
+            --warning: #ff9500;
+            --danger: #ff3b30;
+            --border: rgba(255, 255, 255, 0.1);
+            --glass: rgba(255, 255, 255, 0.08);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 48px 24px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+
+        .header h1 {
+            font-size: 48px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+            margin-bottom: 12px;
+        }
+
+        .header p {
+            font-size: 21px;
+            color: var(--text-secondary);
+            font-weight: 300;
+        }
+
+        /* Glass Card */
+        .card {
+            background: var(--glass);
+            border-radius: 24px;
+            padding: 32px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .card-title {
+            font-size: 28px;
+            font-weight: 500;
+            margin-bottom: 24px;
+        }
+
+        /* Input Section */
+        .input-group {
+            margin-bottom: 24px;
+        }
+
+        .input-label {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .folder-input-wrapper {
+            display: flex;
+            gap: 12px;
+        }
+
+        .folder-input {
+            flex: 1;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px 16px;
+            font-size: 16px;
+            color: var(--text-primary);
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+
+        .folder-input:focus {
+            border-color: var(--accent);
+        }
+
+        .folder-input::placeholder {
+            color: var(--text-secondary);
+        }
+
+        /* Buttons */
+        .btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 14px 24px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s ease, transform 0.1s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-secondary {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+        }
+
+        .btn-danger:hover {
+            background: #ff453a;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Settings */
+        .settings-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            margin-bottom: 12px;
+        }
+
+        .settings-label {
+            font-size: 16px;
+            min-width: 120px;
+        }
+
+        .settings-input {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 16px;
+            color: var(--text-primary);
+            width: 100px;
+            outline: none;
+        }
+
+        /* Progress */
+        .progress-container {
+            margin-top: 24px;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: var(--bg-secondary);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--accent);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-top: 8px;
+        }
+
+        /* Results */
+        .results {
+            display: none;
+        }
+
+        .results.visible {
+            display: block;
+        }
+
+        .trip-card {
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 16px;
+        }
+
+        .trip-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .trip-date {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .trip-route {
+            font-size: 20px;
+            font-weight: 500;
+        }
+
+        .trip-type-badge {
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: rgba(255, 149, 0, 0.2);
+            color: var(--warning);
+            margin-left: 8px;
+        }
+
+        .trip-type-standard {
+            background: rgba(52, 199, 89, 0.2);
+            color: var(--success);
+        }
+
+        .trip-details {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+        }
+
+        .detail-item {
+            text-align: center;
+        }
+
+        .detail-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .detail-value {
+            font-size: 18px;
+            font-weight: 500;
+        }
+
+        /* Summary */
+        .summary-card {
+            background: linear-gradient(135deg, rgba(0, 113, 227, 0.2), rgba(52, 199, 89, 0.1));
+            border-radius: 16px;
+            padding: 32px;
+            text-align: center;
+        }
+
+        .summary-title {
+            font-size: 16px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .summary-total {
+            font-size: 48px;
+            font-weight: 600;
+            color: var(--success);
+        }
+
+        .summary-breakdown {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+            margin-top: 32px;
+        }
+
+        .breakdown-item {
+            padding: 16px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+        }
+
+        .breakdown-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .breakdown-value {
+            font-size: 24px;
+            font-weight: 500;
+            margin-top: 4px;
+        }
+
+        /* Download Button */
+        .download-section {
+            text-align: center;
+            margin-top: 32px;
+        }
+
+        /* Loading Spinner */
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease forwards;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 24px 16px;
+            }
+
+            .header h1 {
+                font-size: 32px;
+            }
+
+            .header p {
+                font-size: 16px;
+            }
+
+            .trip-details {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .summary-breakdown {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        /* Status Messages */
+        .status-message {
+            padding: 16px;
+            border-radius: 12px;
+            margin-top: 16px;
+        }
+
+        .status-success {
+            background: rgba(52, 199, 89, 0.1);
+            border: 1px solid rgba(52, 199, 89, 0.3);
+            color: var(--success);
+        }
+
+        .status-error {
+            background: rgba(255, 59, 48, 0.1);
+            border: 1px solid rgba(255, 59, 48, 0.3);
+            color: #ff3b30;
+        }
+
+        .status-warning {
+            background: rgba(255, 149, 0, 0.1);
+            border: 1px solid rgba(255, 149, 0, 0.3);
+            color: var(--warning);
+        }
+
+        /* Processed Records */
+        .processed-info {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .processed-count {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .processed-count strong {
+            color: var(--warning);
+        }
+
+        /* Button Group */
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        /* Base City Section */
+        .base-city-section {
+            margin-bottom: 24px;
+            padding: 20px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+        }
+
+        .base-city-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .base-city-title {
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .base-city-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .base-city-dropdown {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 16px;
+            color: var(--text-primary);
+            min-width: 120px;
+            cursor: pointer;
+        }
+
+        .base-city-dropdown:focus {
+            border-color: var(--accent);
+            outline: none;
+        }
+
+        .detect-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .detect-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .detect-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .detected-info {
+            margin-top: 8px;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .detected-info strong {
+            color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>差旅费用报销系统</h1>
+            <p>智能整理行程发票，一键生成报销汇总</p>
+        </div>
+
+        <!-- Processed Records Info -->
+        <div class="card fade-in" id="processedCard" style="display: none;">
+            <div class="processed-info">
+                <div class="processed-count">
+                    已处理记录: <strong id="processedTickets">0</strong> 张车票, <strong id="processedInvoices">0</strong> 张发票
+                    <span id="newRecordsInfo" style="color: var(--success); margin-left: 16px;"></span>
+                </div>
+                <button class="btn btn-danger" id="clearBtn" style="padding: 10px 16px; font-size: 14px;">
+                    清除记录
+                </button>
+            </div>
+        </div>
+
+        <!-- Input Card -->
+        <div class="card fade-in">
+            <h2 class="card-title">选择发票文件夹</h2>
+
+            <div class="input-group">
+                <label class="input-label">发票存放目录</label>
+                <div class="folder-input-wrapper">
+                    <input type="text" class="folder-input" id="folderPath" placeholder="请输入文件夹路径...">
+                </div>
+            </div>
+
+            <!-- Base City Selection -->
+            <div class="input-group">
+                <div class="base-city-section">
+                    <div class="base-city-header">
+                        <span class="base-city-title">Base城市设置</span>
+                        <span style="font-size: 14px; color: var(--text-secondary);">用于闭环匹配：Base → 出差地 → Base</span>
+                    </div>
+                    <div class="base-city-row">
+                        <select class="base-city-dropdown" id="baseCitySelect">
+                            <option value="">自动检测</option>
+                        </select>
+                        <button class="detect-btn" id="detectBaseBtn">
+                            <span>自动检测Base城市</span>
+                        </button>
+                    </div>
+                    <div class="detected-info" id="detectedInfo" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- Settings -->
+            <div class="input-group">
+                <label class="input-label">补助设置</label>
+                <div class="settings-row">
+                    <span class="settings-label">伙食补助</span>
+                    <input type="number" class="settings-input" id="mealRate" value="100" min="0">
+                    <span>元/天</span>
+                </div>
+            </div>
+
+            <!-- Process Buttons -->
+            <div class="btn-group">
+                <button class="btn" id="processBtn" style="flex: 1;">
+                    <span>开始处理（跳过已处理）</span>
+                </button>
+                <button class="btn btn-secondary" id="reprocessBtn" style="flex: 1;">
+                    <span>重新计算所有</span>
+                </button>
+            </div>
+
+            <!-- Progress -->
+            <div class="progress-container" id="progressContainer" style="display: none;">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <p class="progress-text" id="progressText">正在处理...</p>
+            </div>
+
+            <!-- Status Message -->
+            <div id="statusMessage"></div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="results" id="resultsSection">
+            <!-- Summary -->
+            <div class="card fade-in">
+                <h2 class="card-title">费用汇总</h2>
+                <div class="summary-card">
+                    <p class="summary-title">总报销金额</p>
+                    <p class="summary-total" id="grandTotal">¥0.00</p>
+                </div>
+                <div class="summary-breakdown">
+                    <div class="breakdown-item">
+                        <p class="breakdown-label">交通费</p>
+                        <p class="breakdown-value" id="ticketTotal">¥0.00</p>
+                    </div>
+                    <div class="breakdown-item">
+                        <p class="breakdown-label">住宿费</p>
+                        <p class="breakdown-value" id="hotelTotal">¥0.00</p>
+                    </div>
+                    <div class="breakdown-item">
+                        <p class="breakdown-label">伙食补助</p>
+                        <p class="breakdown-value" id="mealTotal">¥0.00</p>
+                    </div>
+                    <div class="breakdown-item">
+                        <p class="breakdown-label">行程数</p>
+                        <p class="breakdown-value" id="tripCount">0</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trip Details -->
+            <div class="card fade-in">
+                <h2 class="card-title">行程明细</h2>
+                <div id="tripDetails"></div>
+            </div>
+
+            <!-- Download -->
+            <div class="download-section">
+                <button class="btn" id="downloadBtn">
+                    <span>下载 Excel 报表</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API Base URL
+        const API_BASE = 'http://localhost:5000/api';
+
+        // State
+        let currentFolder = '';
+        let excelPath = '';
+        let selectedBaseCity = '';
+
+        // DOM Elements
+        const folderInput = document.getElementById('folderPath');
+        const processBtn = document.getElementById('processBtn');
+        const reprocessBtn = document.getElementById('reprocessBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const statusMessage = document.getElementById('statusMessage');
+        const resultsSection = document.getElementById('resultsSection');
+        const grandTotal = document.getElementById('grandTotal');
+        const ticketTotal = document.getElementById('ticketTotal');
+        const hotelTotal = document.getElementById('hotelTotal');
+        const mealTotal = document.getElementById('mealTotal');
+        const tripCount = document.getElementById('tripCount');
+        const tripDetails = document.getElementById('tripDetails');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const mealRateInput = document.getElementById('mealRate');
+        const processedCard = document.getElementById('processedCard');
+        const processedTickets = document.getElementById('processedTickets');
+        const processedInvoices = document.getElementById('processedInvoices');
+        const newRecordsInfo = document.getElementById('newRecordsInfo');
+        const baseCitySelect = document.getElementById('baseCitySelect');
+        const detectBaseBtn = document.getElementById('detectBaseBtn');
+        const detectedInfo = document.getElementById('detectedInfo');
+
+        // Show status message
+        function showStatus(message, type = 'success') {
+            statusMessage.innerHTML = `<div class="status-message status-${type}">${message}</div>`;
+        }
+
+        // Update progress
+        function updateProgress(percent, text) {
+            progressFill.style.width = percent + '%';
+            progressText.textContent = text;
+        }
+
+        // Format currency
+        function formatCurrency(amount) {
+            return '¥' + amount.toFixed(2);
+        }
+
+        // Load processed records count
+        async function loadProcessedRecords() {
+            try {
+                const response = await fetch(`${API_BASE}/processed`);
+                const data = await response.json();
+                if (data.success) {
+                    processedTickets.textContent = data.ticket_count;
+                    processedInvoices.textContent = data.invoice_count;
+
+                    // Show/hide processed card based on count
+                    if (data.ticket_count > 0 || data.invoice_count > 0) {
+                        processedCard.style.display = 'block';
+                    } else {
+                        processedCard.style.display = 'none';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load processed records:', error);
+            }
+        }
+
+        // Load base cities for dropdown
+        async function loadBaseCities() {
+            try {
+                const response = await fetch(`${API_BASE}/base-cities`);
+                const data = await response.json();
+                if (data.success && data.cities) {
+                    // Clear existing options except the first "自动检测" option
+                    baseCitySelect.innerHTML = '<option value="">自动检测</option>';
+
+                    // Add cities from API
+                    data.cities.forEach(city => {
+                        const option = document.createElement('option');
+                        option.value = city;
+                        option.textContent = city;
+                        baseCitySelect.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to load base cities:', error);
+            }
+        }
+
+        // Detect base city automatically
+        detectBaseBtn.addEventListener('click', async () => {
+            const folderPath = folderInput.value.trim();
+
+            if (!folderPath) {
+                showStatus('请先输入发票文件夹路径', 'warning');
+                return;
+            }
+
+            detectBaseBtn.disabled = true;
+            detectBaseBtn.innerHTML = '<div class="spinner"></div><span>检测中...</span>';
+
+            try {
+                const response = await fetch(`${API_BASE}/detect-base`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rootFolder: folderPath })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showStatus(`检测失败: ${data.error}`, 'error');
+                } else {
+                    detectedInfo.style.display = 'block';
+                    detectedInfo.innerHTML = `检测到Base城市: <strong>${data.detected_base}</strong>`;
+
+                    // Set the dropdown to detected city
+                    if (data.detected_base) {
+                        baseCitySelect.value = data.detected_base;
+                        selectedBaseCity = data.detected_base;
+                    }
+
+                    // Show destinations if detected
+                    if (data.destinations && data.destinations.length > 0) {
+                        detectedInfo.innerHTML += `<br>检测到的出差目的地: ${data.destinations.join(', ')}`;
+                    }
+
+                    showStatus('Base城市检测完成，请确认后点击处理', 'success');
+                }
+            } catch (error) {
+                showStatus(`检测失败: ${error.message}`, 'error');
+            }
+
+            detectBaseBtn.disabled = false;
+            detectBaseBtn.innerHTML = '<span>自动检测Base城市</span>';
+        });
+
+        // Handle base city selection change
+        baseCitySelect.addEventListener('change', () => {
+            selectedBaseCity = baseCitySelect.value;
+            if (selectedBaseCity) {
+                detectedInfo.style.display = 'block';
+                detectedInfo.innerHTML = `已选择Base城市: <strong>${selectedBaseCity}</strong>`;
+            } else {
+                detectedInfo.style.display = 'none';
+            }
+        });
+
+        // Clear processed records
+        clearBtn.addEventListener('click', async () => {
+            if (!confirm('确定要清除所有已处理记录吗？这将允许重新计算所有发票。')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/clear`, { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    showStatus('已清除所有记录，可以重新计算所有发票', 'success');
+                    loadProcessedRecords();
+                } else {
+                    showStatus('清除失败: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showStatus('清除失败: ' + error.message, 'error');
+            }
+        });
+
+        // Process expenses (skip processed)
+        processBtn.addEventListener('click', async () => {
+            await doProcess(true);
+        });
+
+        // Reprocess all (include processed)
+        reprocessBtn.addEventListener('click', async () => {
+            if (!confirm('确定要重新计算所有发票吗？已处理的发票将被再次计入。')) {
+                return;
+            }
+            await doProcess(false);
+        });
+
+        // Do process
+        async function doProcess(skipProcessed) {
+            const folderPath = folderInput.value.trim();
+            const mealRate = parseFloat(mealRateInput.value) || 100;
+
+            if (!folderPath) {
+                showStatus('请先选择发票文件夹', 'error');
+                return;
+            }
+
+            // Show progress
+            progressContainer.style.display = 'block';
+            processBtn.disabled = true;
+            reprocessBtn.disabled = true;
+            processBtn.innerHTML = '<div class="spinner"></div><span>处理中...</span>';
+
+            try {
+                updateProgress(20, '正在扫描PDF文件...');
+
+                const response = await fetch(`${API_BASE}/process`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        rootFolder: folderPath,
+                        dailyMealRate: mealRate,
+                        skipProcessed: skipProcessed,
+                        baseCity: selectedBaseCity || undefined
+                    })
+                });
+
+                updateProgress(60, '正在匹配行程...');
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showStatus(`处理失败: ${data.error}`, 'error');
+                    updateProgress(0, '');
+                } else {
+                    updateProgress(100, '处理完成!');
+
+                    // Display results
+                    displayResults(data);
+
+                    // Update processed records info
+                    if (data.processed_count) {
+                        loadProcessedRecords();
+                        if (data.processed_count.new_tickets > 0 || data.processed_count.new_invoices > 0) {
+                            newRecordsInfo.textContent = `(本次新增: ${data.processed_count.new_tickets}车票, ${data.processed_count.new_invoices}发票)`;
+                        }
+                    }
+
+                    excelPath = data.excel_path;
+
+                    if (data.message) {
+                        showStatus(data.message, 'warning');
+                    } else {
+                        showStatus('处理完成！请查看下方结果汇总。', 'success');
+                    }
+                }
+            } catch (error) {
+                showStatus(`连接服务器失败: ${error.message}`, 'error');
+                updateProgress(0, '');
+            }
+
+            // Reset buttons
+            processBtn.disabled = false;
+            reprocessBtn.disabled = false;
+            processBtn.innerHTML = '<span>开始处理（跳过已处理）</span>';
+        }
+
+        // Display results
+        function displayResults(data) {
+            resultsSection.classList.add('visible');
+
+            // Summary
+            grandTotal.textContent = formatCurrency(data.expenses.grand_total);
+            ticketTotal.textContent = formatCurrency(data.expenses.total_tickets + data.expenses.total_refunds);
+            hotelTotal.textContent = formatCurrency(data.expenses.total_hotels);
+            mealTotal.textContent = formatCurrency(data.expenses.total_meals);
+            tripCount.textContent = data.trips.length;
+
+            // Trip details
+            tripDetails.innerHTML = '';
+            data.expenses.trip_expenses.forEach((expense, index) => {
+                const trip = expense.trip || expense;
+                const tripCard = document.createElement('div');
+                tripCard.className = 'trip-card fade-in';
+
+                const tripType = trip.trip_type || 'standard';
+                const tripTypeLabel = tripType === 'vacation' ? '休假期间出差' : '标准闭环';
+                const tripTypeClass = tripType === 'vacation' ? '' : 'trip-type-standard';
+
+                tripCard.innerHTML = `
+                    <div class="trip-header">
+                        <div>
+                            <div class="trip-route">${trip.departure_city || ''} → ${trip.destination_city || trip.arrival_city || ''} → ${trip.end_city || ''}</div>
+                            <span class="trip-type-badge ${tripTypeClass}">${tripTypeLabel}</span>
+                        </div>
+                        <div class="trip-date">${trip.trip_dates || ''}</div>
+                    </div>
+                    <div class="trip-details">
+                        <div class="detail-item">
+                            <p class="detail-label">天数</p>
+                            <p class="detail-value">${trip.days || 0}天</p>
+                        </div>
+                        <div class="detail-item">
+                            <p class="detail-label">交通费</p>
+                            <p class="detail-value">${formatCurrency((trip.tickets?.subtotal || trip.ticket_total || 0) + (trip.refunds?.total || trip.refund_total || 0))}</p>
+                        </div>
+                        <div class="detail-item">
+                            <p class="detail-label">住宿费</p>
+                            <p class="detail-value">${formatCurrency(expense.hotels?.total || expense.hotel_total || 0)}</p>
+                        </div>
+                        <div class="detail-item">
+                            <p class="detail-label">伙食费</p>
+                            <p class="detail-value">${formatCurrency(expense.meal_allowance?.total || expense.meal_total || 0)}</p>
+                        </div>
+                        <div class="detail-item">
+                            <p class="detail-label">小计</p>
+                            <p class="detail-value">${formatCurrency(expense.grand_total)}</p>
+                        </div>
+                    </div>
+                `;
+                tripDetails.appendChild(tripCard);
+            });
+        }
+
+        // Download Excel
+        downloadBtn.addEventListener('click', async () => {
+            if (!excelPath) {
+                showStatus('请先处理发票', 'error');
+                return;
+            }
+
+            const filename = excelPath.split('/').pop() || excelPath.split('\\').pop();
+
+            try {
+                const response = await fetch(`${API_BASE}/download/${filename}`);
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    showStatus('Excel文件已下载', 'success');
+                } else {
+                    showStatus('下载失败', 'error');
+                }
+            } catch (error) {
+                showStatus(`下载失败: ${error.message}`, 'error');
+            }
+        });
+
+        // Initialize
+        loadProcessedRecords();
+        loadBaseCities();
+        folderInput.value = '';  // 用户需自行输入路径
+    </script>
+</body>
+</html>

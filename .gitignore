@@ -1,0 +1,46 @@
+# 输出目录（包含报销数据）
+output/
+
+# 处理记录（包含发票号码）
+processed_invoices.json
+
+# 上传目录
+uploads/
+
+# 测试文件（包含真实路径示例）
+tests/
+test_api.py
+
+# Claude 配置（用户特定）
+.claude/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# pytest 缓存
+.pytest_cache/
+.pytest_cache/*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+
+# 临时文件
+*.tmp
+*.bak
+
+# 环境变量
+.env
+.env.local
